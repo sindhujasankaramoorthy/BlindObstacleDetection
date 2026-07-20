@@ -1,1 +1,20 @@
-/build
+# Android
+.gradle/
+.idea/
+local.properties
+build/
+app/build/
+captures/
+*.iml
+
+# Python
+backend/venv/
+backend/__pycache__/
+*.pyc
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
