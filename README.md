@@ -93,7 +93,7 @@ BlindObstacleDetection/
 ### Clone Repository
 
 ```bash
-git clone https://github.com/<your-username>/BlindObstacleDetection.git
+git clone https://github.com/sindhujasankaramoorthy/BlindObstacleDetection.git
 cd BlindObstacleDetection
 ```
 
