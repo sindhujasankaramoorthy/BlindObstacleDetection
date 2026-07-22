@@ -1,0 +1,26 @@
+# Android Studio
+*.iml
+.gradle/
+.idea/
+local.properties
+build/
+app/build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Python
+backend/venv/
+backend/__pycache__/
+**/__pycache__/
+*.pyc
+
+# Backend uploads (optional)
+backend/uploads/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# YOLO output
+runs/
