@@ -7,5 +7,7 @@ data class DetectionResponse(
 
 data class DetectedObject(
     val name: String,
-    val confidence: Double
+    val confidence: Float,
+    val distance: String,
+    val direction: String
 )

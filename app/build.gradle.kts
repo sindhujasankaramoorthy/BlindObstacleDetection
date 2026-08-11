@@ -24,12 +24,16 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     buildFeatures {
         compose = true
+    }
+
+    androidResources {
+        noCompress += "onnx"
     }
 }
 
@@ -42,16 +46,22 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation("androidx.compose.material:material-icons-extended")
 
     // Android
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.3")
 
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.8.0")
 
     // Lifecycle
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.3")
+
+    // Room Database Runtime
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
 
     // CameraX
     implementation("androidx.camera:camera-camera2:1.4.2")
@@ -70,6 +80,9 @@ dependencies {
     // OkHttp
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+
+    // ONNX Runtime for on-device AI detection
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
