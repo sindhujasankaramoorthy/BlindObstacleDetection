@@ -182,9 +182,3 @@ Person
 - Bluetooth headset support
 - Haptic vibration alerts
 
----
-
-## 👨‍💻 Developed By
-
-**Sindhuja Sankaramoorthy**
-
