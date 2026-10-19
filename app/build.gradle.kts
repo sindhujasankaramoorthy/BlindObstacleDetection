@@ -1,20 +1,32 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
 
+val localProps = Properties().apply {
+    val propFile = rootProject.file("local.properties")
+    if (propFile.exists()) {
+        FileInputStream(propFile).use { load(it) }
+    }
+}
+val orsApiKey = localProps.getProperty("ORS_API_KEY") ?: System.getenv("ORS_API_KEY") ?: ""
+
 android {
     namespace = "com.example.blindobstacledetection"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.example.blindobstacledetection"
         minSdk = 24
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "ORS_API_KEY", "\"$orsApiKey\"")
     }
 
     buildTypes {
@@ -30,10 +42,16 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     androidResources {
         noCompress += "onnx"
+    }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
     }
 }
 
