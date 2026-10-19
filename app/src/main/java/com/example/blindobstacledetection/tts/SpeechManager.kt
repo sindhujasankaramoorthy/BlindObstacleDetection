@@ -111,6 +111,16 @@ class SpeechManager(
         tts?.speak(text, mode, null, "DIRECT_TTS_ID")
     }
 
+    /**
+     * Speaks an assistive voice prompt (e.g. for destination input) using QUEUE_ADD
+     * by default to prevent preempting high-priority safety obstacle warnings.
+     */
+    fun speakPrompt(text: String, flush: Boolean = false) {
+        if (!isInitialized || tts == null) return
+        val mode = if (flush) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+        tts?.speak(text, mode, null, "PROMPT_TTS_ID")
+    }
+
     private fun formatPhrase(obj: DetectedObject): String {
         val directionText = when (obj.direction) {
             "Left" -> "on your left"

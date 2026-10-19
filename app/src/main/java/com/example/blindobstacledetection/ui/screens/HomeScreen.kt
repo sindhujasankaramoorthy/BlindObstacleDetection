@@ -42,17 +42,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.blindobstacledetection.ui.components.AccessibleButton
 import com.example.blindobstacledetection.ui.components.GlassCard
 import com.example.blindobstacledetection.ui.components.StatusCard
+import com.example.blindobstacledetection.ui.components.VoiceDestinationCard
+import com.example.blindobstacledetection.ui.components.LocationStatusCard
 import com.example.blindobstacledetection.ui.theme.EmeraldDark
 import com.example.blindobstacledetection.ui.theme.EmeraldPrimary
+import com.example.blindobstacledetection.viewmodel.DestinationViewModel
 import com.example.blindobstacledetection.viewmodel.MainViewModel
 
 @Composable
 fun HomeScreen(
     navController: NavController,
-    mainViewModel: MainViewModel
+    mainViewModel: MainViewModel,
+    destinationViewModel: DestinationViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val isBackendOnline by mainViewModel.isBackendOnline.collectAsState()
@@ -74,6 +79,44 @@ fun HomeScreen(
         if (granted) {
             navController.navigate("camera")
         }
+    }
+
+    var isMicrophoneGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val microphonePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        isMicrophoneGranted = granted
+        destinationViewModel.onPermissionResult(granted)
+    }
+
+    var isLocationGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        isLocationGranted = fineGranted || coarseGranted
+        destinationViewModel.onLocationPermissionResult(fineGranted, coarseGranted)
     }
 
     LaunchedEffect(Unit) {
@@ -181,7 +224,34 @@ fun HomeScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // Phase 17: Voice Destination Input Card
+        VoiceDestinationCard(
+            viewModel = destinationViewModel,
+            hasMicrophonePermission = isMicrophoneGranted,
+            onRequestPermission = {
+                microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Phase 18: Live GPS Location Card
+        LocationStatusCard(
+            viewModel = destinationViewModel,
+            hasLocationPermission = isLocationGranted,
+            onRequestPermission = {
+                locationPermissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
+                )
+            }
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
 
         Text(
             text = "Navigation Control",

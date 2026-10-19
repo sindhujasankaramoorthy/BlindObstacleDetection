@@ -17,6 +17,7 @@ import com.example.blindobstacledetection.ui.screens.SettingsScreen
 import com.example.blindobstacledetection.ui.screens.SplashScreen
 import com.example.blindobstacledetection.ui.theme.BlindObstacleDetectionTheme
 import com.example.blindobstacledetection.viewmodel.DetectionViewModel
+import com.example.blindobstacledetection.viewmodel.DestinationViewModel
 import com.example.blindobstacledetection.viewmodel.HistoryViewModel
 import com.example.blindobstacledetection.viewmodel.MainViewModel
 import com.example.blindobstacledetection.viewmodel.SettingsViewModel
@@ -31,6 +32,7 @@ class MainActivity : ComponentActivity() {
             val mainViewModel: MainViewModel = viewModel()
             val detectionViewModel: DetectionViewModel = viewModel()
             val historyViewModel: HistoryViewModel = viewModel()
+            val destinationViewModel: DestinationViewModel = viewModel()
 
             val settingsState by settingsViewModel.settingsState.collectAsState()
 
@@ -51,7 +53,8 @@ class MainActivity : ComponentActivity() {
                     composable("home") {
                         HomeScreen(
                             navController = navController,
-                            mainViewModel = mainViewModel
+                            mainViewModel = mainViewModel,
+                            destinationViewModel = destinationViewModel
                         )
                     }
 
