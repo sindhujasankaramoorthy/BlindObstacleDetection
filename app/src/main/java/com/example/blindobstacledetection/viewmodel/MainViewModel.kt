@@ -25,7 +25,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isInternetAvailable = MutableStateFlow<Boolean>(true)
     val isInternetAvailable: StateFlow<Boolean> = _isInternetAvailable.asStateFlow()
 
-    private val _baseUrl = MutableStateFlow("http://127.0.0.1:8000/")
+    private val _baseUrl = MutableStateFlow("http://192.168.1.40:8000/")
     val baseUrl: StateFlow<String> = _baseUrl.asStateFlow()
 
     private val _isCheckingBackend = MutableStateFlow(false)

@@ -85,7 +85,7 @@ class AppDatabase private constructor(context: Context) : SQLiteOpenHelper(
             put("detectionIntervalMs", 1000L)
             put("confidenceThreshold", 0.50f)
             put("speechCooldownSeconds", 5)
-            put("baseUrl", "http://127.0.0.1:8000/")
+            put("baseUrl", "http://192.168.1.40:8000/")
             put("vibrationEnabled", 1)
             put("highPriorityOnly", 0)
             put("cameraResolution", "Medium")

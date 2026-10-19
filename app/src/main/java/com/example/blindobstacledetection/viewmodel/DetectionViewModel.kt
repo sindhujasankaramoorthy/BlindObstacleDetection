@@ -55,7 +55,7 @@ class DetectionViewModel(application: Application) : AndroidViewModel(applicatio
     val cameraError: StateFlow<String?> = _cameraError.asStateFlow()
 
     // Configurable parameters from Settings
-    private var baseUrl = "http://127.0.0.1:8000/"
+    private var baseUrl = "http://192.168.1.40:8000/"
     private var confidenceThreshold = 0.50f
     private var speechCooldownSeconds = 5
     private var vibrationEnabled = true

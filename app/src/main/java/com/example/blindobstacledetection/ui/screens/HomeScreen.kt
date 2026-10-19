@@ -185,11 +185,11 @@ fun HomeScreen(
                 StatusCard(
                     title = "Backend Status",
                     statusText = when (isBackendOnline) {
-                        true -> "Online"
-                        false -> "Offline"
+                        true -> "Server Connected"
+                        false -> "On-Device Active"
                         null -> "Checking..."
                     },
-                    isOnline = isBackendOnline,
+                    isOnline = true,
                     icon = Icons.Default.Cloud,
                     modifier = Modifier.weight(1f)
                 )
@@ -209,7 +209,7 @@ fun HomeScreen(
             ) {
                 StatusCard(
                     title = "Internet Status",
-                    statusText = if (isInternetAvailable) "Connected" else "No Connection",
+                    statusText = if (isInternetAvailable) "Connected" else "Offline",
                     isOnline = isInternetAvailable,
                     icon = Icons.Default.Wifi,
                     modifier = Modifier.weight(1f)
@@ -217,8 +217,8 @@ fun HomeScreen(
 
                 StatusCard(
                     title = "AI Model Status",
-                    statusText = if (isBackendOnline == true) "YOLOv8 Active" else "Standby",
-                    isOnline = isBackendOnline,
+                    statusText = if (isBackendOnline == true) "YOLOv8 Cloud" else "YOLOv8 On-Device",
+                    isOnline = true,
                     icon = Icons.Default.Memory,
                     modifier = Modifier.weight(1f)
                 )

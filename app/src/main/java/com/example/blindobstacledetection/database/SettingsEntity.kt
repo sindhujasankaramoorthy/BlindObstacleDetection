@@ -13,7 +13,7 @@ data class SettingsEntity(
     val detectionIntervalMs: Long = 1000L, // 500, 1000, 2000
     val confidenceThreshold: Float = 0.50f, // 0.10 to 0.90
     val speechCooldownSeconds: Int = 5,
-    val baseUrl: String = "http://127.0.0.1:8000/",
+    val baseUrl: String = "http://192.168.1.40:8000/",
     val vibrationEnabled: Boolean = true,
     val highPriorityOnly: Boolean = false,
     val cameraResolution: String = "Medium", // Low, Medium, High
