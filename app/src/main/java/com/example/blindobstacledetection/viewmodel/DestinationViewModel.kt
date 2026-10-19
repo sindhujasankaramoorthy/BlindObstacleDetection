@@ -11,21 +11,41 @@ import com.example.blindobstacledetection.tts.SpeechManager
 import com.example.blindobstacledetection.voice.DestinationParser
 import com.example.blindobstacledetection.voice.DestinationUiState
 import com.example.blindobstacledetection.voice.VoiceInputManager
+import com.example.blindobstacledetection.navigation.NavigationConfig
+import com.example.blindobstacledetection.navigation.geocoding.GeocodingRepository
+import com.example.blindobstacledetection.navigation.geocoding.NominatimGeocodingRepository
+import com.example.blindobstacledetection.navigation.models.RouteUiState
+import com.example.blindobstacledetection.navigation.models.WalkingRoute
+import com.example.blindobstacledetection.navigation.routing.MissingApiKeyException
+import com.example.blindobstacledetection.navigation.routing.OpenRouteServiceWalkingRepository
+import com.example.blindobstacledetection.navigation.routing.RouteNotFoundException
+import com.example.blindobstacledetection.navigation.routing.WalkingRouteRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+import com.example.blindobstacledetection.navigation.models.NavigationState
+import com.example.blindobstacledetection.navigation.TurnByTurnNavigationEngine
+
 /**
- * ViewModel coordinating voice destination input and live GPS location acquisition.
- * Preserves confirmed destination text alongside live UserLocation in memory
- * for consumption in Phase 19 walking-route navigation.
+ * ViewModel coordinating voice destination input (Phase 17), live GPS location
+ * acquisition (Phase 18), pedestrian walking route generation (Phase 19),
+ * and spoken turn-by-turn navigation with obstacle alert coordination (Phase 20).
+ *
+ * Coordinates data flows without blocking real-time camera inference or audio alerts.
  */
-class DestinationViewModel(application: Application) : AndroidViewModel(application) {
+class DestinationViewModel @JvmOverloads constructor(
+    application: Application,
+    private val geocodingRepository: GeocodingRepository = NominatimGeocodingRepository(),
+    private val walkingRouteRepository: WalkingRouteRepository = OpenRouteServiceWalkingRepository()
+) : AndroidViewModel(application) {
 
     private val voiceInputManager = VoiceInputManager(application)
     private val locationProvider = CurrentLocationProvider(application)
-    val speechManager = SpeechManager(application)
+    val speechManager: SpeechManager = SpeechManager.getInstance(application)
+    val navigationEngine = TurnByTurnNavigationEngine()
 
     // Phase 17 Destination State
     private val _uiState = MutableStateFlow<DestinationUiState>(DestinationUiState.Idle)
@@ -49,6 +69,22 @@ class DestinationViewModel(application: Application) : AndroidViewModel(applicat
 
     val hasLocationPermission: Boolean
         get() = locationProvider.hasLocationPermission()
+
+    // Phase 19 Walking Route State
+    private val _routeState = MutableStateFlow<RouteUiState>(RouteUiState.Idle)
+    val routeState: StateFlow<RouteUiState> = _routeState.asStateFlow()
+
+    private val _currentRoute = MutableStateFlow<WalkingRoute?>(null)
+    val currentRoute: StateFlow<WalkingRoute?> = _currentRoute.asStateFlow()
+
+    private var routePlanningJob: Job? = null
+
+    // Phase 20 Turn-by-Turn Navigation State
+    private val _navigationState = MutableStateFlow<NavigationState>(NavigationState.NoDestination)
+    val navigationState: StateFlow<NavigationState> = _navigationState.asStateFlow()
+
+    private val _isNavigationMuted = MutableStateFlow(false)
+    val isNavigationMuted: StateFlow<Boolean> = _isNavigationMuted.asStateFlow()
 
     // -------------------------------------------------------------
     // Voice Destination Actions (Phase 17)
@@ -162,6 +198,7 @@ class DestinationViewModel(application: Application) : AndroidViewModel(applicat
         if (trimmed.isNotBlank()) {
             _confirmedDestination.value = trimmed
             _uiState.value = DestinationUiState.Confirmed(trimmed)
+            _navigationState.value = NavigationState.DestinationConfirmed(trimmed)
             speechManager.speakPrompt("Destination confirmed: $trimmed.")
         }
     }
@@ -179,6 +216,9 @@ class DestinationViewModel(application: Application) : AndroidViewModel(applicat
         voiceInputManager.cancel()
         _confirmedDestination.value = null
         _uiState.value = DestinationUiState.Idle
+        // Stale route for a previous destination must be cleared
+        clearRoute()
+        _navigationState.value = NavigationState.NoDestination
         speechManager.speakPrompt("Destination cleared.")
     }
 
@@ -275,14 +315,279 @@ class DestinationViewModel(application: Application) : AndroidViewModel(applicat
         locationProvider.cancel()
         _currentLocation.value = null
         _locationState.value = LocationUiState.Idle
+        // Invalidate current route since origin location was cleared
+        clearRoute()
         speechManager.speakPrompt("Location cleared.")
+    }
+
+    // -------------------------------------------------------------
+    // Walking Route Planning Actions (Phase 19)
+    // -------------------------------------------------------------
+
+    /**
+     * Plans a pedestrian walking route using the confirmed destination from Phase 17
+     * and the actual acquired GPS location from Phase 18.
+     *
+     * Prevents duplicate requests, validates readiness, resolves destination via geocoding,
+     * and calculates real pedestrian directions.
+     */
+    fun planWalkingRoute() {
+        // Prevent duplicate calls if already calculating
+        if (_routeState.value is RouteUiState.Loading) {
+            return
+        }
+
+        val location = _currentLocation.value
+        if (location == null) {
+            _routeState.value = RouteUiState.Error(
+                message = "Current GPS location not acquired yet. Please tap \"Get Current Location\" above.",
+                isLocationError = true
+            )
+            speechManager.speakPrompt("Current location is not available. Please acquire your location first.")
+            return
+        }
+
+        val destination = _confirmedDestination.value
+        if (destination.isNullOrBlank()) {
+            _routeState.value = RouteUiState.Error(
+                message = "Destination not confirmed yet. Please speak and confirm a destination above.",
+                isDestinationError = true
+            )
+            speechManager.speakPrompt("Destination is not set. Please speak and confirm your destination first.")
+            return
+        }
+
+        if (!NavigationConfig.isConfigured) {
+            _routeState.value = RouteUiState.MissingApiKey()
+            speechManager.speakPrompt("OpenRouteService API key is missing. Please configure your API key.")
+            return
+        }
+
+        // Cancel any previous calculation before launching a new request
+        routePlanningJob?.cancel()
+
+        routePlanningJob = viewModelScope.launch {
+            _routeState.value = RouteUiState.Loading("Resolving destination: \"$destination\"...")
+            speechManager.speakPrompt("Planning walking route to $destination...")
+
+            val geocodeResult = geocodingRepository.geocode(
+                query = destination,
+                proximityLat = location.latitude,
+                proximityLon = location.longitude
+            )
+
+            geocodeResult.onFailure { error ->
+                val errorMsg = error.localizedMessage ?: "Could not resolve destination location."
+                _routeState.value = RouteUiState.Error(
+                    message = errorMsg,
+                    isDestinationError = true
+                )
+                speechManager.speakPrompt("Could not locate destination. Please check the destination name.")
+                return@launch
+            }
+
+            val geocoded = geocodeResult.getOrNull()!!
+            _routeState.value = RouteUiState.Loading("Calculating walking route to ${geocoded.shortName}...")
+
+            val routeResult = walkingRouteRepository.calculateWalkingRoute(
+                originLat = location.latitude,
+                originLon = location.longitude,
+                destLat = geocoded.latitude,
+                destLon = geocoded.longitude,
+                destinationName = geocoded.shortName
+            )
+
+            routeResult.onSuccess { route ->
+                _currentRoute.value = route
+                _routeState.value = RouteUiState.Success(route)
+                _navigationState.value = NavigationState.RouteReady(route)
+                // Spoken confirmation of route summary with clear prompt to start guidance
+                speechManager.speakPrompt(
+                    "Walking route planned. Total distance ${route.formattedDistance}, estimated duration ${route.formattedDuration}. Tap Start Navigation to begin guidance."
+                )
+            }.onFailure { error ->
+                when (error) {
+                    is MissingApiKeyException -> {
+                        _routeState.value = RouteUiState.MissingApiKey(
+                            error.message ?: "OpenRouteService API key not configured."
+                        )
+                        speechManager.speakPrompt("Routing API key is missing.")
+                    }
+                    is RouteNotFoundException -> {
+                        _routeState.value = RouteUiState.Error(
+                            message = error.localizedMessage ?: "No walking route found between these locations.",
+                            canRetry = true
+                        )
+                        speechManager.speakPrompt("No walking route could be found to this destination.")
+                    }
+                    else -> {
+                        val message = error.localizedMessage ?: "Failed to calculate walking route."
+                        _routeState.value = RouteUiState.Error(
+                            message = message,
+                            canRetry = true
+                        )
+                        speechManager.speakPrompt("Could not calculate walking route. Please try again.")
+                    }
+                }
+            }
+        }
+    }
+
+    fun retryRoutePlanning() {
+        planWalkingRoute()
+    }
+
+    fun cancelRoutePlanning() {
+        routePlanningJob?.cancel()
+        routePlanningJob = null
+        if (_routeState.value is RouteUiState.Loading) {
+            _routeState.value = RouteUiState.Idle
+            speechManager.speakPrompt("Route planning cancelled.")
+        }
+    }
+
+    fun clearRoute() {
+        stopNavigation()
+        routePlanningJob?.cancel()
+        routePlanningJob = null
+        _currentRoute.value = null
+        _routeState.value = RouteUiState.Idle
+        val dest = _confirmedDestination.value
+        _navigationState.value = if (!dest.isNullOrBlank()) NavigationState.DestinationConfirmed(dest) else NavigationState.NoDestination
+    }
+
+    fun setApiKey(apiKey: String) {
+        NavigationConfig.setRuntimeApiKey(apiKey)
+        if (apiKey.isNotBlank()) {
+            speechManager.speakPrompt("API key configured.")
+            if (_routeState.value is RouteUiState.MissingApiKey) {
+                planWalkingRoute()
+            }
+        }
+    }
+
+    // -------------------------------------------------------------
+    // Turn-by-Turn Spoken Navigation Actions (Phase 20)
+    // -------------------------------------------------------------
+
+    /**
+     * Starts spoken turn-by-turn navigation for the verified walking route.
+     * Starts continuous GPS location tracking and speaks initial departure maneuver.
+     */
+    fun startNavigation() {
+        val route = _currentRoute.value
+        if (route == null) {
+            speechManager.speakPrompt("No route ready to start. Please plan a walking route first.")
+            return
+        }
+
+        if (!locationProvider.hasLocationPermission()) {
+            speechManager.speakPrompt("Location permission is required to start navigation.")
+            _navigationState.value = NavigationState.Error("Location permission required to navigate.", canRetry = true)
+            return
+        }
+
+        if (!locationProvider.isLocationServicesEnabled()) {
+            speechManager.speakPrompt("Device location is turned off. Please turn on GPS in settings.")
+            _navigationState.value = NavigationState.Error("Device GPS is turned off. Please enable GPS.", canRetry = true)
+            return
+        }
+
+        val startResult = navigationEngine.start(route)
+        _navigationState.value = startResult.navigationState
+        startResult.spokenAnnouncement?.let { speechManager.speakNavigation(it) }
+
+        locationProvider.startNavigationUpdates(intervalMs = 2500L, minDistanceMeters = 1.5f) { loc ->
+            onNavigationLocationUpdate(loc)
+        }
+    }
+
+    /**
+     * Processes live GPS location updates during active navigation.
+     * Evaluates progress against route steps, announces maneuvers, and detects off-route deviation.
+     */
+    fun onNavigationLocationUpdate(location: UserLocation) {
+        _currentLocation.value = location
+        val update = navigationEngine.onLocationUpdate(location) ?: return
+        _navigationState.value = update.navigationState
+
+        update.spokenAnnouncement?.let {
+            speechManager.speakNavigation(it)
+        }
+
+        if (update.isArrived) {
+            locationProvider.stopNavigationUpdates()
+        }
+    }
+
+    /**
+     * Pauses turn-by-turn navigation. Suspends continuous GPS tracking and cancels active navigation speech.
+     */
+    fun pauseNavigation() {
+        val pausedState = navigationEngine.pause() ?: return
+        _navigationState.value = pausedState
+        locationProvider.stopNavigationUpdates()
+        speechManager.cancelNavigationSpeech()
+        speechManager.speakPrompt("Navigation paused.")
+    }
+
+    /**
+     * Resumes turn-by-turn navigation from the current step.
+     */
+    fun resumeNavigation() {
+        val navigatingState = navigationEngine.resume() ?: return
+        _navigationState.value = navigatingState
+        speechManager.speakPrompt("Resuming navigation.")
+
+        locationProvider.startNavigationUpdates(intervalMs = 2500L, minDistanceMeters = 1.5f) { loc ->
+            onNavigationLocationUpdate(loc)
+        }
+    }
+
+    /**
+     * Stops turn-by-turn navigation completely, releases continuous location updates,
+     * and clears any pending navigation speech.
+     */
+    fun stopNavigation() {
+        navigationEngine.stop()
+        locationProvider.stopNavigationUpdates()
+        speechManager.cancelNavigationSpeech()
+        val route = _currentRoute.value
+        _navigationState.value = if (route != null) NavigationState.RouteReady(route) else NavigationState.NoDestination
+        speechManager.speakPrompt("Navigation stopped.")
+    }
+
+    /**
+     * Toggles muting of routine navigation maneuver speech.
+     * Critical and important obstacle warnings remain completely unmuted and active for safety.
+     */
+    fun toggleNavigationMute() {
+        val newMuted = !speechManager.isNavigationMuted
+        speechManager.isNavigationMuted = newMuted
+        _isNavigationMuted.value = newMuted
+        if (newMuted) {
+            speechManager.speakPrompt("Navigation speech muted. Obstacle alerts remain active.")
+        } else {
+            speechManager.speakPrompt("Navigation speech unmuted.")
+        }
+    }
+
+    /**
+     * Recalculates route when user has deviated off-path or needs a new route.
+     */
+    fun recalculateRoute() {
+        speechManager.cancelNavigationSpeech()
+        speechManager.speakPrompt("Recalculating walking route...")
+        planWalkingRoute()
     }
 
     override fun onCleared() {
         super.onCleared()
+        stopNavigation()
+        routePlanningJob?.cancel()
         locationProvider.cancel()
         voiceInputManager.destroy()
-        speechManager.shutdown()
+        speechManager.stop()
     }
 }
 

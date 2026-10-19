@@ -165,11 +165,79 @@ class CurrentLocationProvider(context: Context) {
         }
     }
 
+    private var activeLocationCallback: com.google.android.gms.location.LocationCallback? = null
+
     /**
-     * Cancels any pending location request immediately.
+     * Starts continuous GPS location updates exclusively for active walking navigation.
+     * Guaranteed to stop immediately when navigation is paused, stopped, or cancelled.
+     */
+    @SuppressLint("MissingPermission")
+    fun startNavigationUpdates(
+        intervalMs: Long = 2500L,
+        minDistanceMeters: Float = 2.0f,
+        onLocationUpdate: (UserLocation) -> Unit
+    ) {
+        if (!hasLocationPermission() || !isLocationServicesEnabled()) return
+        stopNavigationUpdates()
+
+        val priority = if (hasFineLocationPermission()) {
+            Priority.PRIORITY_HIGH_ACCURACY
+        } else {
+            Priority.PRIORITY_BALANCED_POWER_ACCURACY
+        }
+
+        val locationRequest = com.google.android.gms.location.LocationRequest.Builder(priority, intervalMs)
+            .setMinUpdateDistanceMeters(minDistanceMeters)
+            .setMinUpdateIntervalMillis(intervalMs / 2)
+            .build()
+
+        val callback = object : com.google.android.gms.location.LocationCallback() {
+            override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
+                val loc = result.lastLocation ?: return
+                val userLocation = UserLocation(
+                    latitude = loc.latitude,
+                    longitude = loc.longitude,
+                    accuracyMeters = if (loc.hasAccuracy()) loc.accuracy else null,
+                    timestamp = loc.time,
+                    provider = loc.provider ?: "fused",
+                    isMock = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) loc.isMock else false
+                )
+                onLocationUpdate(userLocation)
+            }
+        }
+
+        activeLocationCallback = callback
+        try {
+            fusedLocationClient.requestLocationUpdates(
+                locationRequest,
+                callback,
+                android.os.Looper.getMainLooper()
+            )
+        } catch (e: Exception) {
+            Log.e("CurrentLocationProvider", "Failed to start navigation location updates: ${e.message}")
+        }
+    }
+
+    /**
+     * Stops continuous location updates and releases location callbacks.
+     */
+    fun stopNavigationUpdates() {
+        activeLocationCallback?.let { callback ->
+            try {
+                fusedLocationClient.removeLocationUpdates(callback)
+            } catch (e: Exception) {
+                Log.w("CurrentLocationProvider", "Error removing location updates: ${e.message}")
+            }
+        }
+        activeLocationCallback = null
+    }
+
+    /**
+     * Cancels any pending location request and active tracking.
      */
     fun cancel() {
         activeCancellationToken?.cancel()
         activeCancellationToken = null
+        stopNavigationUpdates()
     }
 }

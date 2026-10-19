@@ -61,7 +61,8 @@ class MainActivity : ComponentActivity() {
                     composable("camera") {
                         CameraScreen(
                             navController = navController,
-                            viewModel = detectionViewModel
+                            viewModel = detectionViewModel,
+                            destinationViewModel = destinationViewModel
                         )
                     }
 

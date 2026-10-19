@@ -25,7 +25,7 @@ class DetectionViewModel(application: Application) : AndroidViewModel(applicatio
     private val historyRepository = HistoryRepository(AppDatabase.getInstance(application).detectionHistoryDao())
     private val settingsRepository = SettingsRepository(AppDatabase.getInstance(application).settingsDao())
 
-    val speechManager = SpeechManager(application)
+    val speechManager = SpeechManager.getInstance(application)
 
     private val _detectedObjects = MutableStateFlow<List<DetectedObject>>(emptyList())
     val detectedObjects: StateFlow<List<DetectedObject>> = _detectedObjects.asStateFlow()
@@ -50,6 +50,9 @@ class DetectionViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _useFrontCamera = MutableStateFlow(false)
     val useFrontCamera: StateFlow<Boolean> = _useFrontCamera.asStateFlow()
+
+    private val _cameraError = MutableStateFlow<String?>(null)
+    val cameraError: StateFlow<String?> = _cameraError.asStateFlow()
 
     // Configurable parameters from Settings
     private var baseUrl = "http://127.0.0.1:8000/"
@@ -200,8 +203,16 @@ class DetectionViewModel(application: Application) : AndroidViewModel(applicatio
         _useFrontCamera.value = !_useFrontCamera.value
     }
 
+    fun setCameraError(error: String?) {
+        _cameraError.value = error
+        if (error != null) {
+            _statusText.value = error
+            speechManager.speakPrompt("Camera error. Obstacle detection is currently unavailable.")
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
-        speechManager.shutdown()
+        speechManager.stop()
     }
 }

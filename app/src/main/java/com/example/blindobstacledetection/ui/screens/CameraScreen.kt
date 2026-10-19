@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Cameraswitch
@@ -32,7 +33,10 @@ import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
+import com.example.blindobstacledetection.navigation.models.NavigationState
+import com.example.blindobstacledetection.viewmodel.DestinationViewModel
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -73,10 +77,13 @@ import java.util.concurrent.Executors
 @Composable
 fun CameraScreen(
     navController: NavController,
-    viewModel: DetectionViewModel
+    viewModel: DetectionViewModel,
+    destinationViewModel: DestinationViewModel? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    val navigationState by destinationViewModel?.navigationState?.collectAsState() ?: remember { androidx.compose.runtime.mutableStateOf(NavigationState.NoDestination) }
 
     val detectedObjects by viewModel.detectedObjects.collectAsState()
     val statusText by viewModel.statusText.collectAsState()
@@ -86,6 +93,7 @@ fun CameraScreen(
     val isMuted by viewModel.isVoiceMuted.collectAsState()
     val isFlashOn by viewModel.isFlashOn.collectAsState()
     val useFrontCamera by viewModel.useFrontCamera.collectAsState()
+    val cameraError by viewModel.cameraError.collectAsState()
 
     val previewView = remember { PreviewView(context) }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
@@ -102,34 +110,34 @@ fun CameraScreen(
     LaunchedEffect(useFrontCamera, isFlashOn) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener({
-            val cameraProvider = cameraProviderFuture.get()
-
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
-
-            val imageAnalysis = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-
-            imageAnalysis.setAnalyzer(cameraExecutor) { image ->
-                try {
-                    val jpegBytes = ImageUtils.imageProxyToJpegByteArray(image, quality = 80, maxDimension = 640)
-                    viewModel.processFrame(jpegBytes)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                } finally {
-                    image.close()
-                }
-            }
-
-            val cameraSelector = if (useFrontCamera) {
-                CameraSelector.DEFAULT_FRONT_CAMERA
-            } else {
-                CameraSelector.DEFAULT_BACK_CAMERA
-            }
-
             try {
+                val cameraProvider = cameraProviderFuture.get()
+
+                val preview = Preview.Builder().build().also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
+
+                val imageAnalysis = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
+
+                imageAnalysis.setAnalyzer(cameraExecutor) { image ->
+                    try {
+                        val jpegBytes = ImageUtils.imageProxyToJpegByteArray(image, quality = 80, maxDimension = 640)
+                        viewModel.processFrame(jpegBytes)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    } finally {
+                        image.close()
+                    }
+                }
+
+                val cameraSelector = if (useFrontCamera) {
+                    CameraSelector.DEFAULT_FRONT_CAMERA
+                } else {
+                    CameraSelector.DEFAULT_BACK_CAMERA
+                }
+
                 cameraProvider.unbindAll()
                 val camera = cameraProvider.bindToLifecycle(
                     lifecycleOwner,
@@ -141,8 +149,10 @@ fun CameraScreen(
                 if (camera.cameraInfo.hasFlashUnit()) {
                     camera.cameraControl.enableTorch(isFlashOn)
                 }
+                viewModel.setCameraError(null)
             } catch (e: Exception) {
                 e.printStackTrace()
+                viewModel.setCameraError("Camera unavailable: ${e.localizedMessage ?: "Device hardware unavailable"}")
             }
         }, ContextCompat.getMainExecutor(context))
     }
@@ -159,6 +169,40 @@ fun CameraScreen(
             detectedObjects = detectedObjects,
             modifier = Modifier.fillMaxSize()
         )
+
+        // Camera Failure Alert Overlay (if hardware or permission issue occurs)
+        cameraError?.let { errorMsg ->
+            GlassCard(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                backgroundColor = ColorVeryClose.copy(alpha = 0.95f),
+                contentPadding = 16.dp
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Camera hardware error",
+                        tint = Color.White,
+                        modifier = Modifier.size(36.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Camera Unavailable",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = errorMsg,
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.9f)
+                    )
+                }
+            }
+        }
 
         // Top HUD Header
         GlassCard(
@@ -220,6 +264,51 @@ fun CameraScreen(
                         contentDescription = "Switch Camera",
                         tint = Color.White
                     )
+                }
+            }
+        }
+
+        // Active Turn-by-Turn Navigation HUD Banner (Phase 20)
+        val activeNav = navigationState
+        if (activeNav is NavigationState.Navigating) {
+            GlassCard(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(top = 112.dp, start = 16.dp, end = 16.dp),
+                backgroundColor = if (activeNav.isOffRoute) ColorVeryClose.copy(alpha = 0.9f) else Color.Black.copy(alpha = 0.85f),
+                contentPadding = 10.dp
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.DirectionsWalk,
+                        contentDescription = "Walking Navigation Active",
+                        tint = if (activeNav.isOffRoute) Color.White else EmeraldPrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (activeNav.isOffRoute) "⚠️ Off Route (~${activeNav.offRouteDistanceMeters.toInt()}m off)" else activeNav.currentStep.instruction,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = if (activeNav.distanceToNextManeuverMeters > 0) {
+                                "in ${activeNav.distanceToNextManeuverMeters.toInt()}m • ${activeNav.remainingDistanceMeters.toInt()}m remaining"
+                            } else {
+                                "${activeNav.remainingDistanceMeters.toInt()}m remaining"
+                            },
+                            fontSize = 11.sp,
+                            color = if (activeNav.isOffRoute) Color.White.copy(alpha = 0.9f) else EmeraldPrimary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
         }

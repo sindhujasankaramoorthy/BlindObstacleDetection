@@ -48,6 +48,7 @@ import com.example.blindobstacledetection.ui.components.GlassCard
 import com.example.blindobstacledetection.ui.components.StatusCard
 import com.example.blindobstacledetection.ui.components.VoiceDestinationCard
 import com.example.blindobstacledetection.ui.components.LocationStatusCard
+import com.example.blindobstacledetection.ui.components.WalkingRouteCard
 import com.example.blindobstacledetection.ui.theme.EmeraldDark
 import com.example.blindobstacledetection.ui.theme.EmeraldPrimary
 import com.example.blindobstacledetection.viewmodel.DestinationViewModel
@@ -248,6 +249,20 @@ fun HomeScreen(
                         Manifest.permission.ACCESS_COARSE_LOCATION
                     )
                 )
+            }
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Phase 19: Pedestrian Walking Route Card
+        WalkingRouteCard(
+            viewModel = destinationViewModel,
+            onOpenLiveCamera = {
+                if (isCameraGranted) {
+                    navController.navigate("camera")
+                } else {
+                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                }
             }
         )
 
