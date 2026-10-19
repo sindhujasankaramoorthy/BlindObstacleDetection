@@ -72,4 +72,31 @@ class DestinationParserTest {
         assertEquals("City Center", DestinationParser.parse("Directions to City Center"))
         assertEquals("Town Hall", DestinationParser.parse("Go to Town Hall"))
     }
+
+    @Test
+    fun testPhoneticAliasNormalization() {
+        // Specifically tests the user's issue: "Nilambur" interpreted instead of "Neelambur"
+        assertEquals("Neelambur", DestinationParser.parse("Nilambur"))
+        assertEquals("Neelambur", DestinationParser.parse("nilambur"))
+        assertEquals("Neelambur", DestinationParser.parse("Navigate to Nilambur"))
+        assertEquals("Neelambur", DestinationParser.parse("Take me to nilambur"))
+        assertEquals("Peelamedu", DestinationParser.parse("Pilamedu"))
+        assertEquals("Thudiyalur", DestinationParser.parse("thudiyaloor"))
+        assertEquals("Singanallur", DestinationParser.parse("singanaloor"))
+        assertEquals("Gandhipuram", DestinationParser.parse("gaandhipuram"))
+    }
+
+    @Test
+    fun testTamilVoiceCommandsAndDativeInflections() {
+        // Spoken Tamil destination commands
+        assertEquals("நீலாம்பூர்", DestinationParser.parse("நீலாம்பூர்"))
+        assertEquals("நீலாம்பூர்", DestinationParser.parse("நீலாம்பூர் போ"))
+        assertEquals("நீலாம்பூர்", DestinationParser.parse("நீலாம்பூருக்கு போ"))
+        assertEquals("நீலாம்பூர்", DestinationParser.parse("நீலாம்பூருக்கு வழி காட்டு"))
+        assertEquals("நீலாம்பூர்", DestinationParser.parse("வழி காட்டு நீலாம்பூர்"))
+        assertEquals("காந்திபுரம்", DestinationParser.parse("காந்திபுரத்திற்கு போ"))
+        assertEquals("காந்திபுரம்", DestinationParser.parse("காந்திபுரம் போ"))
+        assertEquals("மருத்துவமனை", DestinationParser.parse("மருத்துவமனைக்கு போ"))
+        assertEquals("பேருந்து நிலையம்", DestinationParser.parse("பேருந்து நிலையத்திற்கு போ"))
+    }
 }
