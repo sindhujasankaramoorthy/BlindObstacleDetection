@@ -28,6 +28,8 @@ import kotlinx.coroutines.launch
 
 import com.example.blindobstacledetection.navigation.models.NavigationState
 import com.example.blindobstacledetection.navigation.TurnByTurnNavigationEngine
+import com.example.blindobstacledetection.navigation.geocoding.RegionalPlaceNormalizer
+import java.util.Locale
 
 /**
  * ViewModel coordinating voice destination input (Phase 17), live GPS location
@@ -46,6 +48,24 @@ class DestinationViewModel @JvmOverloads constructor(
     private val locationProvider = CurrentLocationProvider(application)
     val speechManager: SpeechManager = SpeechManager.getInstance(application)
     val navigationEngine = TurnByTurnNavigationEngine()
+
+    enum class VoiceLanguage(val locale: Locale, val label: String) {
+        ENGLISH_INDIA(Locale.forLanguageTag("en-IN"), "English (India)"),
+        TAMIL_INDIA(Locale.forLanguageTag("ta-IN"), "தமிழ் (Tamil)")
+    }
+
+    private val _voiceLanguage = MutableStateFlow(VoiceLanguage.ENGLISH_INDIA)
+    val voiceLanguage: StateFlow<VoiceLanguage> = _voiceLanguage.asStateFlow()
+
+    fun setVoiceLanguage(language: VoiceLanguage) {
+        _voiceLanguage.value = language
+        val msg = if (language == VoiceLanguage.TAMIL_INDIA) {
+            "Voice language set to Tamil. நீங்கள் தமிழில் பேசலாம்."
+        } else {
+            "Voice language set to English India."
+        }
+        speechManager.speakPrompt(msg)
+    }
 
     // Phase 17 Destination State
     private val _uiState = MutableStateFlow<DestinationUiState>(DestinationUiState.Idle)
@@ -135,6 +155,7 @@ class DestinationViewModel @JvmOverloads constructor(
         _uiState.value = DestinationUiState.Listening(rmsDb = 0f, partialText = "")
 
         voiceInputManager.startListening(
+            languageLocale = _voiceLanguage.value.locale,
             listener = object : VoiceInputManager.Listener {
                 override fun onReadyForSpeech() {
                     _uiState.value = DestinationUiState.Listening(rmsDb = 0f, partialText = "Listening...")
@@ -165,7 +186,13 @@ class DestinationViewModel @JvmOverloads constructor(
                             rawText = recognizedText,
                             parsedDestination = parsed
                         )
-                        speechManager.speakPrompt("Destination recognized: $parsed. Please tap Confirm to accept.")
+                        val romanized = RegionalPlaceNormalizer.getRomanizedName(parsed)
+                        val speechFeedback = if (romanized != null) {
+                            "Destination recognized: $parsed, $romanized. Please tap Confirm to accept."
+                        } else {
+                            "Destination recognized: $parsed. Please tap Confirm to accept."
+                        }
+                        speechManager.speakPrompt(speechFeedback)
                     } else {
                         _uiState.value = DestinationUiState.Error(
                             message = "Could not identify a destination from \"$recognizedText\". Please speak a place name (e.g. \"Navigate to Central Station\")."

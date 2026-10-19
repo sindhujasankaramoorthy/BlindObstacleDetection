@@ -255,6 +255,7 @@ class SpeechManager(
         if (!isInitialized || tts == null || isNavigationMuted) return
 
         synchronized(this) {
+            adaptLanguageForText(instruction)
             currentPriority.set(SpeechPriority.NAVIGATION_MANEUVER)
             // Routine navigation flushes any previous routine navigation or status message
             tts?.speak(instruction, TextToSpeech.QUEUE_FLUSH, null, "NAV_TTS_ID")
@@ -290,9 +291,27 @@ class SpeechManager(
         }
 
         synchronized(this) {
+            adaptLanguageForText(text)
             val mode = if (flush && active == null) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
             currentPriority.set(SpeechPriority.STATUS_MESSAGE)
             tts?.speak(text, mode, null, "PROMPT_TTS_ID")
+        }
+    }
+
+    private fun adaptLanguageForText(text: String) {
+        try {
+            val hasTamil = text.any { it in '\u0B80'..'\u0BFF' }
+            if (hasTamil) {
+                val tamilLocale = Locale.forLanguageTag("ta-IN")
+                val avail = tts?.isLanguageAvailable(tamilLocale)
+                if (avail != TextToSpeech.LANG_NOT_SUPPORTED && avail != TextToSpeech.LANG_MISSING_DATA) {
+                    tts?.setLanguage(tamilLocale)
+                    return
+                }
+            }
+            tts?.setLanguage(Locale.US)
+        } catch (e: Exception) {
+            Log.w("SpeechManager", "Could not adapt TTS language: ${e.message}")
         }
     }
 

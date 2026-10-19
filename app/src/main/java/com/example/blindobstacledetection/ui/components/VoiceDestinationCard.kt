@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,6 +72,7 @@ fun VoiceDestinationCard(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val confirmedDestination by viewModel.confirmedDestination.collectAsState()
+    val currentLanguage by viewModel.voiceLanguage.collectAsState()
 
     GlassCard(
         modifier = modifier.fillMaxWidth(),
@@ -135,6 +137,8 @@ fun VoiceDestinationCard(
                 is DestinationUiState.Idle -> {
                     IdleView(
                         confirmedDestination = confirmedDestination,
+                        currentLanguage = currentLanguage,
+                        onLanguageChange = { viewModel.setVoiceLanguage(it) },
                         onMicClick = {
                             viewModel.onMicrophoneClicked(
                                 hasPermission = hasMicrophonePermission,
@@ -152,6 +156,7 @@ fun VoiceDestinationCard(
                 is DestinationUiState.Listening -> {
                     ListeningView(
                         state = state,
+                        currentLanguage = currentLanguage,
                         onCancelClick = { viewModel.cancelListening() }
                     )
                 }
@@ -199,6 +204,8 @@ fun VoiceDestinationCard(
 @Composable
 private fun IdleView(
     confirmedDestination: String?,
+    currentLanguage: DestinationViewModel.VoiceLanguage,
+    onLanguageChange: (DestinationViewModel.VoiceLanguage) -> Unit,
     onMicClick: () -> Unit,
     onClearClick: () -> Unit
 ) {
@@ -208,7 +215,11 @@ private fun IdleView(
     ) {
         if (confirmedDestination.isNullOrBlank()) {
             Text(
-                text = "Where would you like to go?",
+                text = if (currentLanguage == DestinationViewModel.VoiceLanguage.TAMIL_INDIA) {
+                    "எங்கு செல்ல விரும்புகிறீர்கள்?"
+                } else {
+                    "Where would you like to go?"
+                },
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -218,14 +229,55 @@ private fun IdleView(
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = "Tap the microphone and say:\n\"Navigate to [Destination]\" or \"Take me to [Destination]\"",
+                text = if (currentLanguage == DestinationViewModel.VoiceLanguage.TAMIL_INDIA) {
+                    "மைக் பட்டனை தட்டிச் சொல்லவும்:\n\"நீலாம்பூர் போ\" அல்லது \"காந்திபுரம் போ\""
+                } else {
+                    "Tap the microphone and say:\n\"Navigate to [Destination]\" or \"Take me to [Destination]\""
+                },
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
                 textAlign = TextAlign.Center,
                 lineHeight = 18.sp
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Accessible Segmented Language Selector Pill
+            Row(
+                modifier = Modifier
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                DestinationViewModel.VoiceLanguage.values().forEach { lang ->
+                    val isSelected = (currentLanguage == lang)
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                if (isSelected) EmeraldPrimary else Color.Transparent,
+                                RoundedCornerShape(16.dp)
+                            )
+                            .clickable { onLanguageChange(lang) }
+                            .padding(horizontal = 14.dp, vertical = 6.dp)
+                            .semantics {
+                                role = Role.RadioButton
+                                contentDescription = "Voice language ${lang.label}"
+                                stateDescription = if (isSelected) "Selected" else "Not selected"
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = lang.label,
+                            fontSize = 12.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
 
             // Large High-Contrast Microphone Button
             Button(
@@ -254,7 +306,7 @@ private fun IdleView(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Tap to Speak",
+                text = if (currentLanguage == DestinationViewModel.VoiceLanguage.TAMIL_INDIA) "பேச தட்டவும்" else "Tap to Speak",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -345,6 +397,7 @@ private fun RequestingPermissionView() {
 @Composable
 private fun ListeningView(
     state: DestinationUiState.Listening,
+    currentLanguage: DestinationViewModel.VoiceLanguage,
     onCancelClick: () -> Unit
 ) {
     Column(
@@ -352,7 +405,11 @@ private fun ListeningView(
         modifier = Modifier.fillMaxWidth()
     ) {
         Text(
-            text = "Listening for Destination...",
+            text = if (currentLanguage == DestinationViewModel.VoiceLanguage.TAMIL_INDIA) {
+                "தமிழில் கேட்கிறது (Listening)..."
+            } else {
+                "Listening for Destination..."
+            },
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
             color = EmeraldPrimary,
@@ -362,7 +419,13 @@ private fun ListeningView(
         Spacer(modifier = Modifier.height(6.dp))
 
         Text(
-            text = if (state.partialText.isNotBlank()) "\"${state.partialText}\"" else "Please speak clearly into the microphone now",
+            text = if (state.partialText.isNotBlank()) {
+                "\"${state.partialText}\""
+            } else if (currentLanguage == DestinationViewModel.VoiceLanguage.TAMIL_INDIA) {
+                "மைக் அருகில் தெளிவாக பேசவும் (எ.கா: நீலாம்பூர்)"
+            } else {
+                "Please speak clearly into the microphone now"
+            },
             fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface,

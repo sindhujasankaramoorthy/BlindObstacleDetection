@@ -46,9 +46,10 @@ class VoiceInputManager(context: Context) {
     /**
      * Starts listening for spoken destination input.
      * Guaranteed to execute on the Android main thread.
+     * Defaults to Indian English (en-IN) with multilingual Tamil (ta-IN) support.
      */
     @Synchronized
-    fun startListening(languageLocale: Locale = Locale.getDefault(), listener: Listener): Boolean {
+    fun startListening(languageLocale: Locale = Locale.forLanguageTag("en-IN"), listener: Listener): Boolean {
         if (!isAvailable()) {
             listener.onError("Speech recognition service is not available on this device.", -1)
             return false
@@ -73,9 +74,21 @@ class VoiceInputManager(context: Context) {
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageLocale.toLanguageTag())
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, languageLocale.toLanguageTag())
+                    // Provide bilingual recognition support (en-IN & ta-IN)
+                    val additional = if (languageLocale.language == "ta") {
+                        arrayOf("en-IN", "ta-IN")
+                    } else {
+                        arrayOf("ta-IN", "en-IN")
+                    }
+                    putExtra("android.speech.extra.ADDITIONAL_LANGUAGES", additional)
                     putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Where would you like to go?")
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+                    val prompt = if (languageLocale.language == "ta") {
+                        "நீங்கள் எங்கு செல்ல விரும்புகிறீர்கள்? / Where would you like to go?"
+                    } else {
+                        "Where would you like to go?"
+                    }
+                    putExtra(RecognizerIntent.EXTRA_PROMPT, prompt)
                 }
 
                 isListening = true
